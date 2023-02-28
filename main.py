@@ -1,9 +1,21 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Feb 15 10:55:03 2023
-
+®
 Hedge v5 - w/ buy signal, buy at open of next day
 """
+
+"""
+To do
+- fix start date issue with beginning and end
+- have a toggle for include shorting as well 
+- have a commission (eg 0.1%)
+- toggle for logarithmic charts
+- output a date where the maximum drawdown occurs
+- output the number of closed trades, average duration of trade, average PnL per trade
+
+"""
+
 
 # Import packages
 import numpy as np
@@ -14,11 +26,13 @@ import yfinance as yf
 import datetime as dt
 import copy
 from tabulate import tabulate
+import os
+port = int(os.environ.get('PORT', 5000))
 
 import warnings
 warnings.filterwarnings("ignore")
 
-symbol = "tqqq"
+symbol = "nvda"
 short = 1  # short EMA/SMA period (days)
 long = 200  # long EMA/SMA period (days)
 ind = "SMA"  # choose EMA or SMA
@@ -28,7 +42,7 @@ ind = "SMA"  # choose EMA or SMA
 ohlc_data = {}
 
 # Download historical data for tickers
-start_years_ago = 20
+start_years_ago = 30
 end_years_ago = 0    #set as zero for today
 start = dt.datetime.today() - dt.timedelta(days=365 * start_years_ago)
 end = dt.datetime.today() - dt.timedelta(days=365 * end_years_ago)
@@ -80,7 +94,10 @@ tickers = [symbol]
 # Other ticker: '^IXIC','ARKK','GOOG','QQQ',
 
 for ticker in tickers:
-    ohlc_data[ticker] = yf.download(ticker, start, end)
+    try:
+        ohlc_data[ticker] = yf.download(ticker, start, end)
+    except Exception as e:
+        print("Failed to download data for ticker {}: {}".format(ticker, str(e)))
 
 ticker_signal = symbol
 ticker_strat = symbol
@@ -131,46 +148,44 @@ strategy_df = pd.DataFrame()
 strategy_df["Returns"] = strat_returns["Returns"]
 strategy_df["Returns"] = strategy_df.mean(axis=1)
 
-
-
 def main():
     # Charts
-    fig, ax = plt.subplots(nrows=3, ncols=1, figsize=(10, 18))
-    ax[0].set_title('Long-only strategy: {a}'.format(a=ticker_strat))
-    ax[1].set_title('Crossover signal: {a} {b}/{c} {d} '.format(a=ticker_signal, b=short, c=long, d=ind))
-    ax[2].set_title('Cumulative return')
+    fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(10, 10))
+    #ax[0].set_title('Long-only strategy: {a}'.format(a=ticker_strat))
+    ax[0].set_title('Crossover signal: {a} {b}/{c} {d} '.format(a=ticker_signal, b=short, c=long, d=ind))
+    ax[1].set_title('Cumulative return')
 
     ax[0].grid()
     ax[1].grid()
-    ax[2].grid()
+    #ax[2].grid()
 
     # Chart 1
-    ax[0].plot(strat_returns[ticker_strat], color='k')
+    #ax[0].plot(strat_returns[ticker_strat], color='black')
 
     # Chart 2
-    ax[1].plot(ohlc_dict[ticker_signal]['Adj Close'], color='k', label='Adj Close')
-    ax[1].plot(ohlc_dict[ticker_signal]['Short {}'.format(ind)], color='b', label='Short {}'.format(ind))
-    ax[1].plot(ohlc_dict[ticker_signal]['Long {}'.format(ind)], color='g', label='Long {}'.format(ind))
+    ax[0].plot(ohlc_dict[ticker_signal]['Adj Close'], color='black', label='Adj Close')
+    ax[0].plot(ohlc_dict[ticker_signal]['Short {}'.format(ind)], color='black', label='Short {}'.format(ind))
+    ax[0].plot(ohlc_dict[ticker_signal]['Long {}'.format(ind)], color='g', label='Long {}'.format(ind))
 
     buys = ohlc_dict[ticker_signal][ohlc_dict[ticker_signal]['Position'] == 1].index
     sells = ohlc_dict[ticker_signal][ohlc_dict[ticker_signal]['Position'] == -1].index
-    ax[1].plot_date(buys, ohlc_dict[ticker_signal]['Short {}'.format(ind)][ohlc_dict[ticker_signal]['Position'] == 1], \
+    ax[0].plot_date(buys, ohlc_dict[ticker_signal]['Short {}'.format(ind)][ohlc_dict[ticker_signal]['Position'] == 1], \
                     '^', markersize=5, color='g', label='buy')
-    ax[1].plot_date(sells, ohlc_dict[ticker_signal]['Short {}'.format(ind)][ohlc_dict[ticker_signal]['Position'] == -1], \
+    ax[0].plot_date(sells, ohlc_dict[ticker_signal]['Short {}'.format(ind)][ohlc_dict[ticker_signal]['Position'] == -1], \
                     'v', markersize=5, color='r', label='sell')
-    ax[1].legend()
+    ax[0].legend()
 
     # Chart 3
     strategy_df_2["cum_return"] = (1 + strategy_df_2["Returns"]).cumprod()
     strategy_df_2['Position'] = strat_returns['Position']
-    ax[2].plot(strategy_df_2["cum_return"])
-    ax[2].yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    ax[1].plot(strategy_df_2["cum_return"])
+    ax[1].yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
 
     # Chart 4
     strategy_df["cum_return"] = (1 + strategy_df["Returns"]).cumprod()
     strategy_df['Position'] = strat_returns['Position']
-    ax[2].plot(strategy_df["cum_return"])
-    ax[2].yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+    ax[1].plot(strategy_df["cum_return"],color='green')
+    ax[1].yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
 
     # Print output: KPIs table
     table = (tabulate([['CAGR', "{:.2%}".format(CAGR(strategy_df)), "{:.2%}".format(CAGR(strategy_df_2))],
